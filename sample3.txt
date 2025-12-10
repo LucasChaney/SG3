@@ -1,0 +1,30 @@
+END-OF-LINE-TESTS-START
+one-
+word
+BREAK
+one
+-word
+BREAK
+two -
+words
+BREAK
+two- 
+words
+BREAK
+two-
+ words
+BREAK
+END-OF-LINE-TESTS-DONE
+START-OF-LINE-TESTS-START
+one
+-word
+BREAK
+two 
+-words
+BREAK
+two
+ -words
+BREAK
+two
+- words
+BREAK

@@ -171,7 +171,7 @@ def countOccurrences(wordList, searchWord):
     target = searchWord.casefold()
 
     for word in wordList:
-        if word.casefold().find(target) > -1:
+        if word.casefold() == target: # Changed from ".find" to "=="
             count += 1
 
     return count
