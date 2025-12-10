@@ -21,6 +21,7 @@ from os import path
 from collections import defaultdict
 from pathlib import Path
 import string
+from collections import defaultdict
 
 # constant for extension checking
 file_extension = "txt"
@@ -69,63 +70,118 @@ def validate_filename(filename):
 # ------------------------------------------------------------------------------------
 # GET CONTENT (unchanged logic, but NO prints)
 # ------------------------------------------------------------------------------------
-def getContent(filename):
+def getContent(filename, with_pos: bool):
     """
     Reads text file & converts into word list using SG2's merging + hyphen rules.
+    Takes bool for either including word position (concordance)
+    or not.
 
     EXACT SG2 logic preserved.
     """
     wordlist = []
+    positions = [] # For concordance
     endFunction = False
 
-    removables = ["!", ",", ".", "\"", "", "[", "]", "(", ")", "{", "}", "~", "?", "`"]
+    removables = string.punctuation.replace("-", "") + "\n\r"
 
     while endFunction == False:
         with open(filename, "rt") as f:
             prev_word = ""
             mergePrevWord = False
+            line_number = 0
 
             for line in f:
-                if len(prev_word) > 0:
-                    if not line.startswith(" "):
-                        mergePrevWord = True
-
+                #For concordance
+                line_number += 1
+                word_number = 0
+                
+                # If prev line ended with trailing "-" and current line does not
+                if len(prev_word) > 0 and not line.startswith(" "):
+                    mergePrevWord = True
+                
+                # Splits words on spaces
                 words = line.split(" ")
 
-                for word in words:
+                for idx, word in enumerate(words):
+                    # Skips empty splits from multi spaces or trailing spaces
+                    if word == "":
+                        continue
+                    # Skips standalone hyphens 
+                    if word.strip() == "-":
+                        continue
+                    
                     endofLine = len(words) - 1
-
-                    if word == "-":
-                        word = ""
-                    else:
-                        if mergePrevWord:
-                            word = prev_word + words[0]
-                            word = word.strip("".join(removables))
-                            wordlist.append(word)
-                            prev_word = ""
-                            mergePrevWord = False
-
+                    
+                    if mergePrevWord:
+                        # Merges previous word with current line word
+                        merged = prev_word + words[0]
+                        merged = merged.strip(removables)
+                        if merged:
+                            word_number += 1
+                            lw = merged.lower()
+                            wordlist.append(lw)
+                            if with_pos:
+                                positions.append((line_number, word_number, lw))
+                        # Resets
+                        prev_word = ""
+                        mergePrevWord = False
+                        if idx == 0:
+                            continue
+                            
+                    # Handles current word
+                    if word.endswith("-"):
+                        # If this word is the LAST token on the line, and it ends
+                        # with '-', it might be a cross-line hyphenation fragment.
+                        if idx == endofLine:
+                            # Save raw fragment (with trailing '-') for next line
+                            prev_word = word
                         else:
-                            if word.endswith("-"):
-                                if words.index(word, endofLine) == endofLine:
-                                    prev_word = word
-                                else:
-                                    word = word.replace("-", "")
-                                    word = word.strip("".join(removables))
-                                    wordlist.append(word)
+                            # Internal '-' (not at the very end of the line): just
+                            # remove any '-' that are not wanted and strip punctuation
+                            cleaned = word.replace("-", "")
+                            cleaned = cleaned.strip(removables)
+                            if cleaned:
+                                word_number += 1
+                                lw = cleaned.lower()
+                                wordlist.append(lw)
+                                if with_pos:
+                                    positions.append((line_number, word_number, lw))
 
-                            elif word.startswith("-"):
-                                word = word.replace("-", "")
-                                word = word.strip("".join(removables))
-                                wordlist.append(word)
+                    elif word.startswith("-"):
+                        # Leading '-' is treated as punctuation, not part of the word
+                        cleaned = word.replace("-", "")
+                        cleaned = cleaned.strip(removables)
+                        if cleaned:
+                            word_number += 1 
+                            lw = cleaned.lower()
+                            wordlist.append(lw)
+                            if with_pos:
+                                positions.append((line_number, word_number, lw))
 
-                            else:
-                                word = word.strip("".join(removables))
-                                wordlist.append(word)
-
+                    else:
+                        # Normal word: strip punctuation/newlines from the ends,
+                        # but keep internal '-' intact
+                        cleaned = word.strip(removables)
+                        if cleaned:
+                            word_number += 1
+                            lw = cleaned.lower()
+                            wordlist.append(lw)
+                            if with_pos:
+                                positions.append((line_number, word_number, lw))
+            # For lines ending in '-' with nothing to merge
+            if prev_word:
+                tail = prev_word.rstrip("-").strip(removables)
+                if tail:
+                    lw = tail.lower()
+                    wordlist.append(lw)
+                    if with_pos:
+                        positions.append((line_number, word_number + 1, lw))
         endFunction = True
 
-    return wordlist
+    if with_pos:
+        return positions
+    else: 
+        return wordlist
 
 
 # ------------------------------------------------------------------------------------
@@ -165,13 +221,12 @@ def countOccurrences(wordList, searchWord):
     """
     SAME LOGIC AS SG2:
     - Case-insensitive
-    - Uses substring matching EXACTLY like SG2 (casefold + find)
     """
     count = 0
     target = searchWord.casefold()
 
     for word in wordList:
-        if word.casefold().find(target) > -1:
+        if word.casefold() == target:
             count += 1
 
     return count
@@ -224,28 +279,19 @@ def generate_file_summary(all_wordlists):
 # ------------------------------------------------------------------------------------
 # SG2 Concordance functions preserved EXACTLY; print removed where needed
 # ------------------------------------------------------------------------------------
-def build_Concordance(all_wordlists, ignore_Words):
-    """
-    PURE SG2 LOGIC (no prints)
-    Builds concordance structure: word → [(file#, line#, word#)]
-    """
+# Changed concordance to work through getContent with position
+def build_Concordance(ignore_Words, file_numbers):
+    # Now receives file number from gui object 
     concordance = defaultdict(list)
-    file_Number = 1
 
-    for filename in all_wordlists.keys():
-        with open(filename, "rt") as f:
-            line_Number = 0
-            for line in f:
-                line_Number += 1
-                line_words = line.split()
-                word_Number = 0
-                for word in line_words:
-                    word_Number += 1
-                    clean = word.strip("()[]{},?\/!.'").lower()
-                    if not clean or clean in ignore_Words:
-                        continue
-                    concordance[clean].append((file_Number, line_Number, word_Number))
-        file_Number += 1
+    for filename, file_Number in file_numbers.items():
+        # Reuse getContent's logic, but with positions
+        positions = getContent(filename, with_pos=True)
+
+        for (line_Number, word_Number, w) in positions:
+            if w in ignore_Words:
+                continue
+            concordance[w].append((file_Number, line_Number, word_Number))
 
     return concordance
 

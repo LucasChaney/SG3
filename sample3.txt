@@ -1,0 +1,3 @@
+first-base should be counted as one word but first base should be two.
+co-op re-enter mother-in-law state-of-the-art
+not -count  also -start should split.

@@ -213,7 +213,7 @@ class SG3App(tk.Tk):
             return
 
         try:
-            words = getContent(path)
+            words = getContent(path, False)
         except Exception:
             messagebox.showerror("Error", "Could not read this file.")
             return
@@ -315,11 +315,18 @@ class SG3App(tk.Tk):
                 return
 
             ignore, highlight = read_Extra_Lists()
+            try:
+                file_index = self.file_order.index(selected)
+            except ValueError:
+                messagebox.showerror("Error", "Selected file is not in the open file list.")
+                return
 
-            # FIXED: build_Concordance expects dict + ignore list
+            # Passes file number into concordance for positional numbers
+            file_number = file_index + 1  
+            file_numbers = {selected: file_number}
             concord = build_Concordance(
-                {selected: self.open_files[selected]},
-                ignore
+                ignore,
+                file_numbers
             )
 
             # FIXED: correct arg order: concord, highlight
